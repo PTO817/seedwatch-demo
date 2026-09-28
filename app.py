@@ -1,6 +1,7 @@
 import html
 import io
 import csv
+from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -135,13 +136,58 @@ elif page=='Product history':
     else:st.caption('Seller/store/location context was not imported for this historical check. New runner checks retain available context. UPC validation depends on the retailer collector.')
 
 else:
-    st.write('The working application checks supported retailers in sequence and records collection results separately from price history.')
-    st.info('Portfolio demo: live price checks are unavailable. All displayed products and prices are synthetic.')
-    st.multiselect('Retailers to check',list(COLLECTORS),default=list(COLLECTORS))
-    st.button('Check prices',disabled=True,type='primary')
-    st.caption('The public demo contains no collector code or company database.')
-    st.write('In the working application, each run reports new observations, already-checked listings, manual checks, and failures. A failed request does not become a zero-dollar price.')
-    st.write('Use Listings to explore retailer coverage and manual-check labels, or Product history to compare an observed price with its recorded MAP threshold.')
+    st.write('Try a simulated price check to see how Seedwatch handles accepted prices, duplicate checks, and listings that need attention.')
+    st.caption('SIMULATION ONLY · No retailer requests. Results stay in this browser session and do not change the sample dashboard history.')
+    chosen=st.multiselect('Retailers to simulate',sorted(df.retailer_name.unique()),default=sorted(df.retailer_name.unique()))
+    if 'sample_checked' not in st.session_state:
+        st.session_state.sample_checked={}
+    start,reset=st.columns([1,1])
+    if reset.button('Reset sample run'):
+        st.session_state.sample_checked={}
+        st.session_state.pop('sample_report',None)
+        st.session_state.pop('sample_run_time',None)
+        st.success('Simulation reset. You can run the sample again.')
+    if start.button('Run sample check',type='primary',disabled=not chosen):
+        results=[]
+        for row in rows:
+            if row['retailer_name'] not in chosen:continue
+            lid=row['listing_id']
+            result={'SKU':row['sku'],'Product':row['product_name'],'Retailer':row['retailer_name'],
+                    'Sample price':None,'Sample MAP':row['catalog_map'],'Comparison':'Not assessed'}
+            if row['retailer_name'] in MANUAL:
+                result.update(Outcome='Manual check required',Detail='Scripted manual-review example; no new price assigned.')
+            elif lid in st.session_state.sample_checked:
+                saved=st.session_state.sample_checked[lid]
+                result.update(saved)
+                result.update(Outcome='Skipped',Detail='Already accepted in this simulation session. Reset to start again.')
+            elif row['sku']=='DEMO-004' and row['retailer_name']=='GNC':
+                result.update(Outcome='Needs review',Detail='Scripted missing-price example; no zero price or compliance result assigned.')
+            else:
+                # Deterministic examples, not market observations or network results.
+                offset={'DEMO-001':-2.0,'DEMO-002':1.5,'DEMO-003':0.0,'DEMO-004':-1.0}[row['sku']]
+                price=round(row['catalog_map']+offset,2)
+                accepted={'Sample price':price,'Comparison':'Below MAP' if price<row['catalog_map'] else 'OK'}
+                st.session_state.sample_checked[lid]=accepted
+                result.update(accepted)
+                result.update(Outcome='Accepted',Detail='Synthetic price accepted for this demonstration.')
+            results.append(result)
+        st.session_state.sample_report=results
+        st.session_state.sample_run_time=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    if 'sample_report' in st.session_state:
+        report=pd.DataFrame(st.session_state.sample_report)
+        st.subheader('Sample run results')
+        st.caption('Simulated run · '+st.session_state.sample_run_time)
+        st.success('Simulation complete. No live prices were fetched or saved.')
+        cols=st.columns(4)
+        for column,label,outcome in zip(cols,['Accepted','Skipped','Manual checks','Needs review'],['Accepted','Skipped','Manual check required','Needs review']):
+            column.metric(label,int(report.Outcome.eq(outcome).sum()))
+        st.dataframe(report,hide_index=True,width='stretch',column_config={
+            'Sample price':st.column_config.NumberColumn(format='$%.2f'),
+            'Sample MAP':st.column_config.NumberColumn(format='$%.2f')})
+        st.download_button('Export simulated results',export_csv(report),file_name='seedwatch-simulated-results.csv',mime='text/csv')
+        st.caption('Run again to see duplicate protection. Reset sample run clears only this session’s simulated results. Other visitors are unaffected.')
+    else:
+        st.info('Select retailers, then run a sample check. The scenarios are scripted to demonstrate behavior, not current retailer access.')
 
 st.divider()
 st.caption('Seedwatch · MAP monitoring workspace · '+'Synthetic portfolio data' if config.DEMO else 'Seedwatch · Results apply to the observed seller, location and shopping method.')
