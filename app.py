@@ -28,7 +28,7 @@ if not config.DATABASE.is_file():
 with st.sidebar:
     st.markdown('<div class="brand">Seedwatch<small>RETAIL PRICE MONITOR</small></div>',unsafe_allow_html=True)
     st.write('')
-    page=st.radio('Workspace',['Overview','Listings','Product history','Collection activity'],label_visibility='collapsed')
+    page=st.radio('Workspace',['Overview','Listings','Product history','Manage catalog','Collection activity','Reports'],label_visibility='collapsed')
     st.divider()
     st.caption('PUBLIC PORTFOLIO DEMO' if config.DEMO else 'PRIVATE WORKSPACE')
     st.write('Synthetic data · no live checks' if config.DEMO else 'Amazing Herbs · retail monitoring')
@@ -36,7 +36,7 @@ with st.sidebar:
     if not config.DEMO and not config.LOCAL:st.button('Sign out',on_click=st.logout)
 
 st.markdown('<div class="eyebrow">PRICE INTELLIGENCE / WORKSPACE</div>',unsafe_allow_html=True)
-st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.'}[page])
+st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Build your retailer catalog.','Reports':'Take your data with you.'}[page])
 if config.DEMO:st.info('Portfolio demo — all products and prices below are synthetic. Retailer links open homepages. Live collection is disabled.')
 else:st.caption('Private development preview' if config.LOCAL else 'Private company workspace')
 
@@ -71,22 +71,28 @@ def table(frame):
 
 if page=='Overview':
     st.markdown('<p class="hero-note">Spot prices below MAP, see the last successful check, and follow up on listings that need attention.</p>',unsafe_allow_html=True)
-    current=df['collection_state'].eq('Checked today')
+    current=df['freshness'].eq('Current')
     a,b,c,d=st.columns(4)
     a.metric('Active listings',len(df))
     b.metric('Below MAP · current',int((current & df['map_result'].eq('Below MAP')).sum()))
-    c.metric('Checked today',int(current.sum()))
+    c.metric('Current this week',int(current.sum()))
     d.metric('Manual checks',int(df['collection_state'].eq('Manual check required').sum()))
     st.write('')
     left,right=st.columns([1.6,1])
     with left:
         st.subheader('Retailer coverage')
-        cover=df.groupby(['retailer_name','collection_state']).size().unstack(fill_value=0)
-        st.bar_chart(cover,color=['#37664a','#aac495','#e8bc67','#96a8a3','#d47861','#c7cbd3'][:len(cover.columns)],horizontal=True)
+        import altair as alt
+        from model import STATUS_COLORS
+        plot=df.groupby(['retailer_name','collection_state']).size().reset_index(name='Listings')
+        st.altair_chart(alt.Chart(plot).mark_bar().encode(
+            y=alt.Y('retailer_name:N',title='Retailer'),x=alt.X('Listings:Q'),
+            color=alt.Color('collection_state:N',title='Status',scale=alt.Scale(domain=list(STATUS_COLORS),range=list(STATUS_COLORS.values()))),
+            tooltip=['retailer_name','collection_state','Listings']),width='stretch')
+        st.caption('Green: current · Yellow: outdated · Gray: not checked · Purple: manual check required · Red: needs review')
     with right:
         st.subheader('What needs attention')
         manual=int(df.collection_state.eq('Manual check required').sum())
-        stale=int(df.collection_state.eq('Outdated').sum())
+        stale=int(df.freshness.eq('Outdated').sum())
         st.write(f'**{manual} listings** need a manual retailer check.')
         st.write(f"**{stale} {'listing has' if stale == 1 else 'listings have'}** older observations. Previous prices remain visible.")
         st.caption('Below-MAP flags compare the observed price with the MAP recorded at that check. They are review signals, not a claim about every seller or location.')
@@ -110,34 +116,31 @@ elif page=='Listings':
     st.caption(f'{len(filtered)} of {len(df)} active listings · prices shown in USD')
     view=table(filtered)
     st.download_button('Export this view',export_csv(view),file_name='seedwatch-demo.csv' if config.DEMO else 'seedwatch-prices.csv',mime='text/csv')
+    from reports import download
+    download(config,filtered.to_dict('records'),'Download this view as Excel')
     st.caption('Manual-check listings may have an older saved price. Opening the retailer page does not mark a check as complete.')
 
 elif page=='Product history':
-    options={r['listing_id']:f"{r['sku']} · {r['product_name']} · {r['size']} · {r['retailer_name']}" for r in rows}
-    lid=st.selectbox('Choose a product listing',list(options),format_func=options.get)
-    row=next(r for r in rows if r['listing_id']==lid)
-    a,b,c=st.columns(3)
-    a.metric('Last observed price',f"${row['current_price']:.2f}" if row['current_price'] is not None else '—')
-    b.metric('Current catalog MAP',f"${row['catalog_map']:.2f}")
-    c.metric('Collection status',row['collection_state'])
-    if row['reason']:st.warning(row['reason'])
-    st.link_button('Open retailer page ↗',row['product_url'])
-    hist=pd.DataFrame(history(config.DATABASE,lid))
-    if hist.empty:st.info('No successful price checks recorded for this listing.')
-    else:
-        st.caption(f"Last successful check: {row['date_checked']}")
-        st.line_chart(hist.set_index('date_checked')[['current_price','map_price']],color=['#275b42','#c38b30'],x_label='Check date',y_label='USD')
-        st.dataframe(hist.rename(columns={'date_checked':'Date','current_price':'Price','map_price':'MAP at check','status':'Result'}),hide_index=True,width='stretch')
-    context=observation(config.RUNTIME,row['check_id']) if not config.DEMO else {'note':'Synthetic demo observation; no real retailer offer.'}
-    st.subheader('Observation context')
-    if context:
-        for key in ('seller','store','delivery_zip','method','size_note','note','source'):
-            if context.get(key):st.write(f"**{key.replace('_',' ').capitalize()}:** {context[key]}")
-    else:st.caption('Seller/store/location context was not imported for this historical check. New runner checks retain available context. UPC validation depends on the retailer collector.')
+    from comparison_ui import render_comparison
+    render_comparison(config,rows,table,export_csv)
+
+elif page=='Reports':
+    from reports import render_reports
+    st.caption('Downloads contain synthetic portfolio data only.')
+    render_reports(config,rows)
+
+elif page=='Manage catalog':
+    from demo_catalog import render_demo_catalog
+    render_demo_catalog()
 
 else:
     st.write('Try a simulated price check to see how Seedwatch handles accepted prices, duplicate checks, and listings that need attention.')
     st.caption('SIMULATION ONLY · No retailer requests. Results stay in this browser session and do not change the sample dashboard history.')
+    with st.expander('Weekly checks · workflow preview'):
+        st.caption('The private app supports Sunday checks while the host computer is awake and Seedwatch is running. These demo controls do not schedule jobs.')
+        st.checkbox('Enable Sunday checks (preview)',value=True)
+        st.selectbox('Sunday check time',[f'{h:02}:00' for h in range(24)],index=9)
+        st.selectbox('Time zone',['Eastern Time','Central Time','Mountain Time','Pacific Time'])
     chosen=st.multiselect('Retailers to simulate',sorted(df.retailer_name.unique()),default=sorted(df.retailer_name.unique()))
     if 'sample_checked' not in st.session_state:
         st.session_state.sample_checked={}
@@ -190,4 +193,6 @@ else:
         st.info('Select retailers, then run a sample check. The scenarios are scripted to demonstrate behavior, not current retailer access.')
 
 st.divider()
+with st.expander('What I’m working on next'):
+    st.write('Make new retailer setup easier by detecting clear product and price data from a pasted URL. Improve automated access to retailers that block price checks, using supported integrations where available. Keep manual review available when a price cannot be validated.')
 st.caption('Seedwatch · MAP monitoring workspace · '+'Synthetic portfolio data' if config.DEMO else 'Seedwatch · Results apply to the observed seller, location and shopping method.')
