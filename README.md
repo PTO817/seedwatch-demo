@@ -83,3 +83,9 @@ These checks validate the demo workflow; they do not validate live retailer acce
 - Keep manual review explicit when product identity or pricing cannot be validated.
 
 The weekly schedule controls and catalog setup are workflow previews in this demo. They do not schedule jobs or contact retailer websites.
+
+
+### Additional demo workflows
+- Storage offers a session-only cleanup example that preserves the sample catalog and history. No server files are deleted.
+- Manage catalog includes manual price entry with product confirmation and date/price validation. Records stay in a separate session table; preset charts are unchanged.
+- Overview shows current prices at, above, and below MAP. Synthetic Amazing Herbs prices are at or above MAP.

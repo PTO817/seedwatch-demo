@@ -28,7 +28,7 @@ if not config.DATABASE.is_file():
 with st.sidebar:
     st.markdown('<div class="brand">Seedwatch<small>RETAIL PRICE MONITOR</small></div>',unsafe_allow_html=True)
     st.write('')
-    page=st.radio('Workspace',['Overview','Listings','Product history','Manage catalog','Collection activity','Reports'],label_visibility='collapsed')
+    page=st.radio('Workspace',['Overview','Listings','Product history','Manage catalog','Collection activity','Reports','Storage'],label_visibility='collapsed')
     st.divider()
     st.caption('PUBLIC PORTFOLIO DEMO' if config.DEMO else 'PRIVATE WORKSPACE')
     st.write('Synthetic data · no live checks' if config.DEMO else 'Amazing Herbs · retail monitoring')
@@ -36,7 +36,7 @@ with st.sidebar:
     if not config.DEMO and not config.LOCAL:st.button('Sign out',on_click=st.logout)
 
 st.markdown('<div class="eyebrow">PRICE INTELLIGENCE / WORKSPACE</div>',unsafe_allow_html=True)
-st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Build your retailer catalog.','Reports':'Take your data with you.'}[page])
+st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Build your retailer catalog.','Reports':'Take your data with you.','Storage':'Keep your workspace tidy.'}[page])
 if config.DEMO:st.info('Portfolio demo — all products and prices below are synthetic. Retailer links open homepages. Live collection is disabled.')
 else:st.caption('Private development preview' if config.LOCAL else 'Private company workspace')
 
@@ -97,6 +97,17 @@ if page=='Overview':
         st.write(f"**{stale} {'listing has' if stale == 1 else 'listings have'}** older observations. Previous prices remain visible.")
         st.caption('Below-MAP flags compare the observed price with the MAP recorded at that check. They are review signals, not a claim about every seller or location.')
         st.caption('Open Listings in the sidebar to filter results and follow retailer links.')
+    st.subheader('Price comparison · current observations')
+    priced=df[current & df.current_price.notna() & df.checked_map.notna()].copy()
+    priced['Price comparison']=priced.apply(lambda r:'At MAP' if abs(r.current_price-r.checked_map)<0.005 else ('Below MAP' if r.current_price<r.checked_map else 'Above MAP'),axis=1)
+    counts=priced['Price comparison'].value_counts()
+    for col,label in zip(st.columns(3),['At MAP','Above MAP','Below MAP']):
+        col.metric(label,int(counts.get(label,0)))
+    choice=st.selectbox('Show current prices',['All','At MAP','Above MAP','Below MAP'])
+    shown=priced if choice=='All' else priced[priced['Price comparison']==choice]
+    shown=shown.copy();shown['map_result']=shown['Price comparison']
+    table(shown)
+    st.caption('Illustrative sample prices. Amazing Herbs is at or above MAP in this dataset; these are not actual retailer observations.')
     st.subheader('Latest below-MAP observations')
     below=df[df.historical_status.eq('Below MAP')].sort_values('gap',ascending=False)
     if below.empty:st.success('No below-MAP observations in this view.')
@@ -131,7 +142,26 @@ elif page=='Reports':
 
 elif page=='Manage catalog':
     from demo_catalog import render_demo_catalog
-    render_demo_catalog()
+    render_demo_catalog(rows)
+
+elif page=='Storage':
+    st.info('Cleanup demonstration only. These sample files exist only in this browser session; no real files or price history are deleted.')
+    files=st.session_state.setdefault('cleanup_samples',[
+        {'File':'Old check log','Age (days)':45,'Size (KB)':180,'Eligible':True},
+        {'File':'Old troubleshooting screenshot','Age (days)':38,'Size (KB)':820,'Eligible':True},
+        {'File':'Recent check log','Age (days)':2,'Size (KB)':95,'Eligible':False},
+        {'File':'Product catalog and price history','Age (days)':90,'Size (KB)':640,'Eligible':False}])
+    st.dataframe(files,hide_index=True)
+    st.caption('This example removes troubleshooting files older than 30 days and keeps recent logs, the catalog, and price history.')
+    eligible=[r for r in files if r['Eligible']]
+    st.metric('Sample space to recover',f"{sum(r['Size (KB)'] for r in eligible):,} KB")
+    confirm=st.checkbox('Remove the eligible sample troubleshooting files')
+    if st.button('Run sample cleanup',disabled=not confirm or not eligible):
+        st.session_state.cleanup_samples=[r for r in files if not r['Eligible']]
+        st.rerun()
+    if not eligible:st.success('Sample cleanup complete. Catalog and price history were preserved.')
+    if st.button('Reset cleanup example'):
+        st.session_state.pop('cleanup_samples',None);st.rerun()
 
 else:
     st.write('Try a simulated price check to see how Seedwatch handles accepted prices, duplicate checks, and listings that need attention.')
@@ -168,7 +198,7 @@ else:
             else:
                 # Deterministic examples, not market observations or network results.
                 offset={'DEMO-001':-2.0,'DEMO-002':1.5,'DEMO-003':0.0,'DEMO-004':-1.0}[row['sku']]
-                price=round(row['catalog_map']+offset,2)
+                price=round(row['catalog_map']+(max(0,offset) if row['retailer_name']=='Amazing Herbs' else offset),2)
                 accepted={'Sample price':price,'Comparison':'Below MAP' if price<row['catalog_map'] else 'OK'}
                 st.session_state.sample_checked[lid]=accepted
                 result.update(accepted)

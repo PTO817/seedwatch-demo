@@ -21,5 +21,5 @@ def create_demo(path):
                 if j>=6:continue
                 for days in [14,10,7,3,0]:
                     if i==4 and j==3 and days<7:continue
-                    price=round(mp+((i+j)%5-2)*1.2+(days%4)*.15,2)
+                    price=round(mp+(i%2)*1.2 if j==0 else mp+((i+j)%5-2)*1.2+(days%4)*.15,2)
                     c.execute('INSERT INTO price_checks(listing_id,current_price,date_checked,map_price,status) VALUES(?,?,?,?,?)',(lid,price,(date.today()-timedelta(days=days)).isoformat(),mp,'Below MAP' if price<mp else 'OK'))
