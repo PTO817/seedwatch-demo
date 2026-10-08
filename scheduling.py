@@ -33,43 +33,6 @@ def slots(config,now=None):
     return last,last+timedelta(days=7)
 
 
-def tick(database,runtime,mode='demo',now=None,starter=None):
-    if mode!='private':return None
-    lock=FileLock(str(Path(runtime)/'scheduler.lock'))
-    Path(runtime).mkdir(parents=True,exist_ok=True)
-    try:lock.acquire(timeout=0)
-    except Timeout:return None
-    try:
-        config=settings(runtime);last,_=slots(config,now)
-        if not config['enabled'] or last<datetime.fromisoformat(config['enabled_at']):return None
-        key=last.astimezone(timezone.utc).isoformat()
-        with open_sqlite(state_path(runtime)) as c:
-            if c.execute('SELECT 1 FROM scheduled_runs WHERE slot=?',(key,)).fetchone():return None
-        if starter is None:
-            from runner import start_run
-            starter=start_run
-        try:rid,_=starter(database,runtime,list(COLLECTORS),mode='private')
-        except ValueError:return None # Active manual run: retry on next tick, not twice at once.
-        with open_sqlite(state_path(runtime)) as c:
-            c.execute('INSERT INTO scheduled_runs VALUES(?,?,?)',(key,rid,datetime.now(timezone.utc).isoformat()))
-        return rid
-    finally:lock.release()
-
-
-def start_service(database,runtime,mode):
-    stop=threading.Event()
-    def loop():
-        while not stop.is_set():
-            try:tick(database,runtime,mode)
-            except Exception as e:
-                # Surface errors without killing the web app or silently abandoning the schedule.
-                Path(runtime).mkdir(parents=True,exist_ok=True)
-                (Path(runtime)/'schedule-error.txt').write_text(str(e))
-            stop.wait(30)
-    worker=threading.Thread(target=loop,daemon=True,name='seedwatch-weekly')
-    worker.start();return stop
-
-
 def render_schedule(config):
     import streamlit as st
     st.subheader('Weekly checks')
@@ -85,7 +48,7 @@ def render_schedule(config):
         if st.form_submit_button('Save schedule'):
             save_settings(config.RUNTIME,enabled,hour,zone);st.rerun()
     st.write('Next scheduled check: **'+(next_slot.strftime('%A, %B %d at %I:%M %p %Z') if current['enabled'] else 'Paused')+'**')
-    st.caption('All supported retailers are included. Keep Seedwatch running and the computer awake. After a missed Sunday, it runs one catch-up check when reopened; it does not invent prices for missed dates. Failed scheduled runs remain visible and can be retried with Check prices.')
+    st.caption('Demo schedule only; no background jobs run. All supported retailers are included. Keep Seedwatch running and the computer awake. After a missed Sunday, it runs one catch-up check when reopened; it does not invent prices for missed dates. Failed scheduled runs remain visible and can be retried with Check prices.')
     with open_sqlite(state_path(config.RUNTIME)) as c:
         row=c.execute('SELECT s.started,r.status FROM scheduled_runs s LEFT JOIN runs r ON r.id=s.run_id ORDER BY s.started DESC LIMIT 1').fetchone()
     if row:st.write(f'Last scheduled attempt: {row[0]} · {row[1] or "Starting"}')

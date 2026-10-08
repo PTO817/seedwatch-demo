@@ -1,11 +1,22 @@
+# Verify the deployment is a complete, matching release before importing app modules.
+from pathlib import Path as _Path
+import hashlib as _hashlib
+import streamlit as _st
+_EXPECTED = {'config.py': 'e30d58d6b373070827f36e4801fbfb30c2f643ebac6525941d2233c58334270d', 'catalog_tools.py': '64c6d70ce493ff434eeaec58c9b74a958245401c565475499ecf27ed27afb4a9', 'catalog_ui.py': '960741f7fe7feed32a1b947ae7a336fa25b1d900be2202c84801c72565ea2cc7', 'comparison_ui.py': 'c7609dc6fe261e75bf1750c246ecd9675aebc4a50871b614763981d64272d1ab', 'demo_workspace.py': '47256f188496564946a91deace063f9a297a72568a75df5dc578f7597b078e81', 'demo_data.py': '443fb7cd3ae46fd15ff10c8304b4081683077e510f7057f63382db46ed7942c3', 'model.py': '0afbce23b48639041e1f824b2dbfd1d21208387b60db18756179e9746a318fdf', 'reports.py': '1949ba60de8085b05c3e182190ca54de1450adc8d79cd3c0f6f58a568ef68dec', 'scheduling.py': 'bdadcc385ba18a4e85eae2fa1b246284115dca5a11bed19fbd5571ab7a865001', 'storage.py': '5b42ce2afbc23719fc436d858224c7613844757cd2da08d4bbf3edd6f2f159e1', 'listing_test.py': '6cd18eee6c4406d18abf975e9c9d3485aa0ad2c1b9bbb242b2e162a7dd68344f'}
+_root = _Path(__file__).resolve().parent
+_bad = [name for name, digest in _EXPECTED.items() if not (_root/name).is_file() or _hashlib.sha256((_root/name).read_bytes()).hexdigest()!=digest]
+if _bad:
+    _st.error('The demo update is incomplete. Upload every file from Seedwatch_Demo_Complete, then reboot the app. Files needing update: '+', '.join(_bad))
+    _st.stop()
+
 import html
 import io
 import csv
-from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
 import streamlit as st
 import config
+from demo_workspace import workspace, simulate_run
 from demo_data import create_demo
 from model import snapshot,decorate,history,run_status,latest_attempts,observation,COLLECTORS,MANUAL,today
 
@@ -21,9 +32,7 @@ h1,h2,h3{letter-spacing:-.04em!important} h1{font-size:2.7rem!important;font-wei
 .hero-note{font-size:1.05rem;color:#657366;max-width:850px}.brand{font-size:1.6rem;font-weight:700;letter-spacing:-.04em}.brand small{font-size:.65rem;letter-spacing:.2em;display:block;margin-top:4px;color:#b9ccae}
 </style>''',unsafe_allow_html=True)
 
-if config.DEMO:create_demo(config.DATABASE)
-if not config.DATABASE.is_file():
-    st.error('Connect an existing project database before opening the private workspace. See START_HERE.md.');st.stop()
+config=workspace()
 
 with st.sidebar:
     st.markdown('<div class="brand">Seedwatch<small>RETAIL PRICE MONITOR</small></div>',unsafe_allow_html=True)
@@ -36,17 +45,32 @@ with st.sidebar:
     if not config.DEMO and not config.LOCAL:st.button('Sign out',on_click=st.logout)
 
 st.markdown('<div class="eyebrow">PRICE INTELLIGENCE / WORKSPACE</div>',unsafe_allow_html=True)
-st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Build your retailer catalog.','Reports':'Take your data with you.','Storage':'Keep your workspace tidy.'}[page])
+st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Keep your catalog growing.','Storage':'Keep your workspace tidy.','Reports':'Take your pricing data with you.'}[page])
 if config.DEMO:st.info('Portfolio demo — all products and prices below are synthetic. Retailer links open homepages. Live collection is disabled.')
 else:st.caption('Private development preview' if config.LOCAL else 'Private company workspace')
 
 if config.TEST_WORKSPACE:
     st.info('FRESH-PRICE TEST — separate database copy. Results stay in this test workspace; your regular history is unchanged.')
 
+from scheduling import settings
+schedule=settings(config.RUNTIME)
+if page=='Storage':
+    from storage import render_storage
+    render_storage(config.EDIT)
+    st.stop()
+
 run,attempts=run_status(config.RUNTIME)
-rows=decorate(snapshot(config.DATABASE),latest_attempts(config.RUNTIME),today(config.TIMEZONE))
+rows=decorate(snapshot(config.DATABASE),latest_attempts(config.RUNTIME),today(schedule['timezone'] if schedule else config.TIMEZONE),schedule)
 df=pd.DataFrame(rows)
-if df.empty:st.info('No active listings found.');st.stop()
+if page=='Manage catalog':
+    from catalog_ui import render_catalog
+    render_catalog(config.EDIT)
+    st.stop()
+if page=='Reports':
+    from reports import render_reports
+    render_reports(config,rows)
+    st.stop()
+if df.empty:st.info('No active listings found. Add products and retailer links in Manage catalog.');st.stop()
 
 
 def export_csv(frame):
@@ -60,7 +84,7 @@ def export_csv(frame):
 def table(frame):
     names={'sku':'SKU','product_name':'Product','size':'Size','retailer_name':'Retailer','current_price':'Last price',
            'checked_map':'MAP at check','map_result':'Comparison','collection_state':'Collection status',
-           'date_checked':'Last checked','product_url':'Retailer page'}
+           'freshness':'Freshness','date_checked':'Last checked','last_attempted':'Last attempted','next_check_due':'Next review due','product_url':'Retailer page'}
     view=frame[list(names)].rename(columns=names)
     st.dataframe(view,hide_index=True,width='stretch',column_config={
         'Last price':st.column_config.NumberColumn(format='$%.2f'),
@@ -81,14 +105,19 @@ if page=='Overview':
     left,right=st.columns([1.6,1])
     with left:
         st.subheader('Retailer coverage')
+        cover=df.groupby(['retailer_name','collection_state']).size().unstack(fill_value=0)
         import altair as alt
         from model import STATUS_COLORS
-        plot=df.groupby(['retailer_name','collection_state']).size().reset_index(name='Listings')
+        colors={name:color for name,color in STATUS_COLORS.items() if name!='Check in progress'}
+        coverage_rows=df.copy()
+        running=coverage_rows.collection_state.eq('Check in progress')
+        coverage_rows.loc[running,'collection_state']=coverage_rows.loc[running,'freshness']
+        plot=coverage_rows.groupby(['retailer_name','collection_state']).size().reset_index(name='Listings')
         st.altair_chart(alt.Chart(plot).mark_bar().encode(
             y=alt.Y('retailer_name:N',title='Retailer'),x=alt.X('Listings:Q'),
-            color=alt.Color('collection_state:N',title='Status',scale=alt.Scale(domain=list(STATUS_COLORS),range=list(STATUS_COLORS.values()))),
+            color=alt.Color('collection_state:N',title='Status',scale=alt.Scale(domain=list(colors),range=list(colors.values()))),
             tooltip=['retailer_name','collection_state','Listings']),width='stretch')
-        st.caption('Green: current · Yellow: outdated · Gray: not checked · Purple: manual check required · Red: needs review')
+        st.caption('Green: current · Yellow: outdated · Red: collection needs review · Gray: not checked · Purple: manual check required')
     with right:
         st.subheader('What needs attention')
         manual=int(df.collection_state.eq('Manual check required').sum())
@@ -97,17 +126,6 @@ if page=='Overview':
         st.write(f"**{stale} {'listing has' if stale == 1 else 'listings have'}** older observations. Previous prices remain visible.")
         st.caption('Below-MAP flags compare the observed price with the MAP recorded at that check. They are review signals, not a claim about every seller or location.')
         st.caption('Open Listings in the sidebar to filter results and follow retailer links.')
-    st.subheader('Price comparison · current observations')
-    priced=df[current & df.current_price.notna() & df.checked_map.notna()].copy()
-    priced['Price comparison']=priced.apply(lambda r:'At MAP' if abs(r.current_price-r.checked_map)<0.005 else ('Below MAP' if r.current_price<r.checked_map else 'Above MAP'),axis=1)
-    counts=priced['Price comparison'].value_counts()
-    for col,label in zip(st.columns(3),['At MAP','Above MAP','Below MAP']):
-        col.metric(label,int(counts.get(label,0)))
-    choice=st.selectbox('Show current prices',['All','At MAP','Above MAP','Below MAP'])
-    shown=priced if choice=='All' else priced[priced['Price comparison']==choice]
-    shown=shown.copy();shown['map_result']=shown['Price comparison']
-    table(shown)
-    st.caption('Illustrative sample prices. Amazing Herbs is at or above MAP in this dataset; these are not actual retailer observations.')
     st.subheader('Latest below-MAP observations')
     below=df[df.historical_status.eq('Below MAP')].sort_values('gap',ascending=False)
     if below.empty:st.success('No below-MAP observations in this view.')
@@ -117,7 +135,7 @@ elif page=='Listings':
     a,b,c=st.columns([2,1,1])
     query=a.text_input('Search products or SKU',placeholder='Try a product name or SKU')
     retailers=b.multiselect('Retailer',sorted(df.retailer_name.unique()))
-    state=c.selectbox('Collection status',['All']+sorted(df.collection_state.unique()))
+    state=c.selectbox('Collection status',['All']+sorted(s for s in df.collection_state.unique() if s!='Check in progress'))
     below=st.checkbox('Only below-MAP observations')
     filtered=df.copy()
     if query:filtered=filtered[(filtered.product_name+' '+filtered.sku+' '+filtered['size']).str.contains(query,case=False,regex=False)]
@@ -135,94 +153,39 @@ elif page=='Product history':
     from comparison_ui import render_comparison
     render_comparison(config,rows,table,export_csv)
 
-elif page=='Reports':
-    from reports import render_reports
-    st.caption('Downloads contain synthetic portfolio data only.')
-    render_reports(config,rows)
-
-elif page=='Manage catalog':
-    from demo_catalog import render_demo_catalog
-    render_demo_catalog(rows)
-
-elif page=='Storage':
-    st.info('Cleanup demonstration only. These sample files exist only in this browser session; no real files or price history are deleted.')
-    files=st.session_state.setdefault('cleanup_samples',[
-        {'File':'Old check log','Age (days)':45,'Size (KB)':180,'Eligible':True},
-        {'File':'Old troubleshooting screenshot','Age (days)':38,'Size (KB)':820,'Eligible':True},
-        {'File':'Recent check log','Age (days)':2,'Size (KB)':95,'Eligible':False},
-        {'File':'Product catalog and price history','Age (days)':90,'Size (KB)':640,'Eligible':False}])
-    st.dataframe(files,hide_index=True)
-    st.caption('This example removes troubleshooting files older than 30 days and keeps recent logs, the catalog, and price history.')
-    eligible=[r for r in files if r['Eligible']]
-    st.metric('Sample space to recover',f"{sum(r['Size (KB)'] for r in eligible):,} KB")
-    confirm=st.checkbox('Remove the eligible sample troubleshooting files')
-    if st.button('Run sample cleanup',disabled=not confirm or not eligible):
-        st.session_state.cleanup_samples=[r for r in files if not r['Eligible']]
-        st.rerun()
-    if not eligible:st.success('Sample cleanup complete. Catalog and price history were preserved.')
-    if st.button('Reset cleanup example'):
-        st.session_state.pop('cleanup_samples',None);st.rerun()
-
 else:
-    st.write('Try a simulated price check to see how Seedwatch handles accepted prices, duplicate checks, and listings that need attention.')
-    st.caption('SIMULATION ONLY · No retailer requests. Results stay in this browser session and do not change the sample dashboard history.')
-    with st.expander('Weekly checks · workflow preview'):
-        st.caption('The private app supports Sunday checks while the host computer is awake and Seedwatch is running. These demo controls do not schedule jobs.')
-        st.checkbox('Enable Sunday checks (preview)',value=True)
-        st.selectbox('Sunday check time',[f'{h:02}:00' for h in range(24)],index=9)
-        st.selectbox('Time zone',['Eastern Time','Central Time','Mountain Time','Pacific Time'])
-    chosen=st.multiselect('Retailers to simulate',sorted(df.retailer_name.unique()),default=sorted(df.retailer_name.unique()))
-    if 'sample_checked' not in st.session_state:
-        st.session_state.sample_checked={}
-    start,reset=st.columns([1,1])
-    if reset.button('Reset sample run'):
-        st.session_state.sample_checked={}
-        st.session_state.pop('sample_report',None)
-        st.session_state.pop('sample_run_time',None)
-        st.success('Simulation reset. You can run the sample again.')
-    if start.button('Run sample check',type='primary',disabled=not chosen):
-        results=[]
-        for row in rows:
-            if row['retailer_name'] not in chosen:continue
-            lid=row['listing_id']
-            result={'SKU':row['sku'],'Product':row['product_name'],'Retailer':row['retailer_name'],
-                    'Sample price':None,'Sample MAP':row['catalog_map'],'Comparison':'Not assessed'}
-            if row['retailer_name'] in MANUAL:
-                result.update(Outcome='Manual check required',Detail='Scripted manual-review example; no new price assigned.')
-            elif lid in st.session_state.sample_checked:
-                saved=st.session_state.sample_checked[lid]
-                result.update(saved)
-                result.update(Outcome='Skipped',Detail='Already accepted in this simulation session. Reset to start again.')
-            elif row['sku']=='DEMO-004' and row['retailer_name']=='GNC':
-                result.update(Outcome='Needs review',Detail='Scripted missing-price example; no zero price or compliance result assigned.')
-            else:
-                # Deterministic examples, not market observations or network results.
-                offset={'DEMO-001':-2.0,'DEMO-002':1.5,'DEMO-003':0.0,'DEMO-004':-1.0}[row['sku']]
-                price=round(row['catalog_map']+(max(0,offset) if row['retailer_name']=='Amazing Herbs' else offset),2)
-                accepted={'Sample price':price,'Comparison':'Below MAP' if price<row['catalog_map'] else 'OK'}
-                st.session_state.sample_checked[lid]=accepted
-                result.update(accepted)
-                result.update(Outcome='Accepted',Detail='Synthetic price accepted for this demonstration.')
-            results.append(result)
-        st.session_state.sample_report=results
-        st.session_state.sample_run_time=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    if 'sample_report' in st.session_state:
-        report=pd.DataFrame(st.session_state.sample_report)
-        st.subheader('Sample run results')
-        st.caption('Simulated run · '+st.session_state.sample_run_time)
-        st.success('Simulation complete. No live prices were fetched or saved.')
-        cols=st.columns(4)
-        for column,label,outcome in zip(cols,['Accepted','Skipped','Manual checks','Needs review'],['Accepted','Skipped','Manual check required','Needs review']):
-            column.metric(label,int(report.Outcome.eq(outcome).sum()))
-        st.dataframe(report,hide_index=True,width='stretch',column_config={
-            'Sample price':st.column_config.NumberColumn(format='$%.2f'),
-            'Sample MAP':st.column_config.NumberColumn(format='$%.2f')})
-        st.download_button('Export simulated results',export_csv(report),file_name='seedwatch-simulated-results.csv',mime='text/csv')
-        st.caption('Run again to see duplicate protection. Reset sample run clears only this session’s simulated results. Other visitors are unaffected.')
-    else:
-        st.info('Select retailers, then run a sample check. The scenarios are scripted to demonstrate behavior, not current retailer access.')
+    st.write('Run supported retailers in sequence. Failures stay visible and do not stop the remaining retailers.')
+    st.warning('H-E-B and Vitamin Shoppe require manual checks. Amazon’s checkout-only listing remains unresolved.')
+    chosen=st.multiselect('Retailers to check',list(COLLECTORS),default=['Amazon','Whole Foods'] if config.TEST_WORKSPACE else list(COLLECTORS))
+    st.caption('Demo: price checks are simulated using sample data; no retailer websites are contacted.')
+    if st.button('Check prices',type='primary',disabled=not chosen):
+        simulate_run(config,chosen)
+        st.rerun()
+    from scheduling import render_schedule
+    render_schedule(config.EDIT)
+    @st.fragment(run_every='3s')
+    def progress():
+        current,items=run_status(config.RUNTIME)
+        if not current:
+            st.info('No collection runs yet.' if not config.DEMO else 'Demo only. Live run history appears in the private workspace.');return
+        st.subheader('Latest run')
+        st.write(f"**{current['status']}** · Started {current['started'][:19].replace('T',' ')} UTC")
+        done=sum(x['status'] not in ('Running','Queued') for x in items)
+        st.progress(done/max(len(items),1),text=f'{done} of {len(items)} retailers finished')
+        st.dataframe(pd.DataFrame(items)[['retailer','status','inserted','skipped','manual','failed','detail']],hide_index=True,width='stretch')
+        if current['status']=='Running':st.caption('Keep this app process running until the check finishes. If the app is stopped, an interrupted run may require a restart.')
+        if not config.DEMO:
+            for item in items:
+                logfile=config.RUNTIME/'runs'/current['id']/item['retailer'].replace(' ','_')/'collector.log'
+                if logfile.is_file():
+                    problem=collector_problem(logfile.read_text(errors='replace'))
+                    if problem:st.error(item['retailer']+': '+problem)
+            with st.expander('Diagnostic output'):
+                for item in items:
+                    log=config.RUNTIME/'runs'/current['id']/item['retailer'].replace(' ','_')/'collector.log'
+                    if log.is_file():
+                        st.caption(item['retailer']);st.code(log.read_text(errors='replace')[-12000:],language='text')
+    progress()
 
 st.divider()
-with st.expander('What I’m working on next'):
-    st.write('Make new retailer setup easier by detecting clear product and price data from a pasted URL. Improve automated access to retailers that block price checks, using supported integrations where available. Keep manual review available when a price cannot be validated.')
 st.caption('Seedwatch · MAP monitoring workspace · '+'Synthetic portfolio data' if config.DEMO else 'Seedwatch · Results apply to the observed seller, location and shopping method.')
