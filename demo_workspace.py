@@ -8,9 +8,9 @@ from demo_data import create_demo
 from model import open_sqlite,state_path,snapshot,COLLECTORS
 
 def workspace():
-    if 'demo_workspace_v4' not in st.session_state:
+    if 'demo_workspace_v5' not in st.session_state:
         root=Path(tempfile.mkdtemp(prefix='seedwatch-public-'))
-        st.session_state.demo_workspace_v4=str(root)
+        st.session_state.demo_workspace_v5=str(root)
         db=root/'data'/'sample.db';create_demo(db)
         runtime=root/'runtime';state=state_path(runtime)
         # One disposable diagnostic file demonstrates the real cleanup rules.
@@ -21,7 +21,7 @@ def workspace():
             c.execute("INSERT INTO attempts(run_id,retailer,status,detail) VALUES(?,?,?,?)",(rid,'Amazing Herbs','Completed','Synthetic previous check'))
         folder=runtime/'runs'/rid/'sample';folder.mkdir(parents=True)
         (folder/'collector.log').write_text('Synthetic old diagnostic log.\n'*1000)
-    root=Path(st.session_state.demo_workspace_v4)
+    root=Path(st.session_state.demo_workspace_v5)
     values=dict(DATABASE=root/'data'/'sample.db',RUNTIME=root/'runtime',TIMEZONE='America/New_York',LOCAL=True,TEST_WORKSPACE=False)
     edit=SimpleNamespace(**values,DEMO=False,MODE='private')
     return SimpleNamespace(**values,DEMO=True,MODE='demo',EDIT=edit)

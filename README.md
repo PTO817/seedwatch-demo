@@ -39,7 +39,7 @@ No installation is needed. A few places to start:
 3. In **Manage catalog → Record a manual price**, choose a listing without a saved check for today, enter a price and offer notes, and confirm the product details. Your observation will appear in your sample workspace.
 4. Open **Reports** and download an Excel workbook.
 
-The demo follows the private app's layout and workflows, using **fictional products and prices**. These are examples, not claims about actual retailer pricing. Each visitor gets a separate temporary workspace, so your edits do not affect anyone else's data. Company data is not included. Price checks and listing tests are simulated, and schedule controls do not run background jobs.
+The demo follows the private app's layout and workflows, using **fictional products and prices**. The sample history includes below-MAP prices recovering to MAP or above, alongside stable prices and unresolved issues, to illustrate what a follow-up workflow could look like. These are examples, not claims about actual retailer pricing or outcomes caused by Seedwatch. Each visitor gets a separate temporary workspace, so your edits do not affect anyone else's data. Company data is not included. Price checks and listing tests are simulated, and schedule controls do not run background jobs.
 
 ## What I built and learned
 

@@ -19,7 +19,16 @@ def create_demo(path):
                 lid=i*10+j
                 c.execute('INSERT INTO retailer_listings VALUES(?,?,?,?,?,?)',(lid,i,retailer,f'DEMO-{lid}',f'https://www.{domains[j]}','Active'))
                 if j>=6:continue
-                for days in [14,10,7,3,0]:
+                for step,days in enumerate([14,10,7,3,0]):
                     if i==4 and j==3 and days<7:continue
-                    price=round(mp*1.30 if j==0 else mp+((i+j)%5-2)*1.2+(days%4)*.15,2)
+                    # Fictional follow-up scenarios: recovery, stable pricing, and unresolved issues.
+                    trajectories=[
+                        [-2.4,-2.4,-1.2,0,1.2],
+                        [1.2,1.8,1.2,2.4,1.8],
+                        [-3.0,-2.4,0,1.2,2.4],
+                        [-2.4,-3.0,-2.4,-1.8,-1.2],
+                        [0,0.6,0,0,0.6],
+                    ]
+                    offset=trajectories[(i+j-2)%len(trajectories)][step]
+                    price=round(mp*1.30 if j==0 else mp+offset,2)
                     c.execute('INSERT INTO price_checks(listing_id,current_price,date_checked,map_price,status) VALUES(?,?,?,?,?)',(lid,price,(date.today()-timedelta(days=days)).isoformat(),mp,'Below MAP' if price<mp else 'OK'))
