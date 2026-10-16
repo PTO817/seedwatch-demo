@@ -30,6 +30,8 @@ def create_demo(path):
                 # Manual observations and deliberately older observations stay visible.
                 stale=j==2 or (j==3 and i>13) or manual
                 latest=day-timedelta(days=14 if stale else 0)
-                for step,days in enumerate([28,21,14,7,0]):
+                # The brand has sample observations from the earliest demo date.
+                history_days=[42,35,28,21,14,7,0] if j==0 else [28,21,14,7,0]
+                for step,days in enumerate(history_days):
                     price=round(mp*(1.3 if j==0 else 1+trajectories[(i+j)%5][step]),2)
                     c.execute('INSERT INTO price_checks(listing_id,current_price,date_checked,map_price,status) VALUES(?,?,?,?,?)',(lid,price,(latest-timedelta(days=days)).isoformat(),mp,'Below MAP' if price<mp else 'OK'))

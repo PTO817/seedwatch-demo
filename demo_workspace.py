@@ -8,9 +8,9 @@ from demo_data import create_demo
 from model import open_sqlite,state_path,snapshot,COLLECTORS,automatic_retailers,manual_reason,today
 
 def workspace():
-    if 'demo_workspace_v7' not in st.session_state:
+    if 'demo_workspace_v8' not in st.session_state:
         root=Path(tempfile.mkdtemp(prefix='seedwatch-public-'))
-        st.session_state.demo_workspace_v7=str(root)
+        st.session_state.demo_workspace_v8=str(root)
         db=root/'data'/'sample.db';create_demo(db)
         from catalog_tools import save_retailer,save_listing
         from listing_test import preview
@@ -31,7 +31,7 @@ def workspace():
         folder=runtime/'runs'/rid/'sample';folder.mkdir(parents=True)
         (folder/'collector.log').write_text('Synthetic old diagnostic log.\n'*1000)
         seed_recent_run(db,runtime)
-    root=Path(st.session_state.demo_workspace_v7)
+    root=Path(st.session_state.demo_workspace_v8)
     values=dict(DATABASE=root/'data'/'sample.db',RUNTIME=root/'runtime',TIMEZONE='America/New_York',LOCAL=True,TEST_WORKSPACE=False)
     edit=SimpleNamespace(**values,DEMO=False,MODE='private')
     return SimpleNamespace(**values,DEMO=True,MODE='demo',EDIT=edit)
