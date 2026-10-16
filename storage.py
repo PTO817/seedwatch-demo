@@ -82,14 +82,16 @@ def candidates(database, runtime, now=None):
     return result
 
 
-def cleanup(database, runtime, mode='demo'):
+def cleanup(database, runtime, mode='demo', categories=None, approved=None):
     if mode != 'private': return {'status':'Disabled in demo','removed':0,'bytes':0}
     lock = FileLock(str(Path(database).resolve())+'.runner.lock')
     try: lock.acquire(timeout=0)
     except Timeout: return {'status':'A price check or catalog edit is active; cleanup postponed.','removed':0,'bytes':0}
     report = {'status':'Completed','removed':0,'bytes':0,'errors':[]}
     try:
-        for path in candidates(database,runtime):
+        for path,category in candidates(database,runtime).items():
+            if categories is not None and category not in categories:continue
+            if approved is not None and str(path) not in approved:continue
             try:
                 size = path.stat().st_size
                 path.unlink()
@@ -118,9 +120,21 @@ def render_storage(config):
         c.metric('Ready to clean',f'{eligible/1024**2:.1f} MB')
     except OSError:
         st.info('Files changed during the storage check. Refresh to update the totals.')
-    st.caption('Cleanup runs when you open the app and after a price check. Original project folders and other workspaces are outside its scope.')
-    if st.button('Clean up old files'):
-        report = cleanup(config.DATABASE,config.RUNTIME,config.MODE)
+    st.caption('Choose categories below and review the files before cleanup. Original project folders and other workspaces are outside its scope.')
+    plan=candidates(config.DATABASE,config.RUNTIME)
+    selected=[]
+    st.subheader('Choose what to clean')
+    for category in ['Old diagnostics','Older backups','Temporary copies']:
+        count=sum(value==category for value in plan.values())
+        if st.checkbox(f'{category} ({count} files)',value=False,key='clean_'+category):selected.append(category)
+    approved={str(path):path.stat().st_size for path,category in plan.items() if category in selected}
+    st.write(f"Selected: **{len(approved)} files · {sum(approved.values())/1024**2:.2f} MB**")
+    if approved:
+        with st.expander('Review selected files'):
+            st.dataframe([{'File':str(path),'Category':category,'Size (bytes)':approved[str(path)]} for path,category in plan.items() if str(path) in approved],hide_index=True)
+    confirmed=st.checkbox('I reviewed the selected files and want to remove them.',key='cleanup_confirm_'+str(sorted(approved)))
+    if st.button('Clean up selected files',disabled=not approved or not confirmed):
+        report = cleanup(config.DATABASE,config.RUNTIME,config.MODE,categories=selected,approved=approved)
         st.session_state['storage_report'] = report
         st.rerun()
     report = st.session_state.get('storage_report')

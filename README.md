@@ -14,7 +14,7 @@ One of his most important requests was being able to add products and retailers 
 
 ## What Seedwatch does
 
-The private application tracks more than 100 product listings across eight retailers, including Amazing Herbs, Amazon, GNC, and Vitacost. Automatic collection is available for supported sources; listings that cannot be checked reliably remain available for manual review.
+The private application tracks product listings across retailers including Amazing Herbs, Amazon, GNC, and Vitacost. Automatic collection is available for supported sources; listings that cannot be checked reliably remain available for manual review.
 
 Seedwatch compares observed prices with **minimum advertised price (MAP)**—the company's advertised-price guideline for a product—and highlights prices below that threshold for review.
 
@@ -23,10 +23,13 @@ With the app, a user can:
 - **Find listings that need attention:** see below-MAP prices, outdated observations, and listings requiring manual checks.
 - **Compare the same product across retailers:** view color-coded price history alongside MAP.
 - **Manage the catalog:** add or edit products, register retailers, and attach product pages.
+- **Set up a new automatic source:** test a product page, review the detected product and seller, confirm the offer, and save a compatible listing for future checks. In this demo the test is simulated; it does not establish that a real site supports automation.
 - **Record a manual check:** save a price and notes about the seller or offer when automation is unavailable.
 - **Download Excel reports:** take pricing results and history into a spreadsheet.
 - **Set up weekly checks:** the private app supports Sunday checks while Seedwatch is running and its host computer is awake.
-- **Manage storage:** clean up eligible troubleshooting files while keeping product and price history.
+- **Track follow-ups:** record review notes, retailer contact, and resolution without changing the observed prices.
+- **Prepare retailer emails:** fill a reusable template with the selected product, price, MAP, observation date/time when recorded, and link. Add a screenshot and download an email draft for review in your email app. Seedwatch does not send it.
+- **Manage storage:** choose old diagnostics, older backups, or temporary copies, review eligible files, and clean them up while keeping product and price history.
 
 ## Take a look around
 
@@ -37,7 +40,10 @@ No installation is needed. A few places to start:
 1. Open **Overview** to see retailer coverage and listings needing attention.
 2. Visit **Product history**, choose a product, and compare its prices across retailers.
 3. In **Manage catalog → Record a manual price**, choose a listing without a saved check for today, enter a price and offer notes, and confirm the product details. Your observation will appear in your sample workspace.
-4. Open **Reports** and download an Excel workbook.
+4. Try **Follow-ups** to save a next step for a sample listing.
+5. Open **Retailer emails**, enter a sample contact, and prepare a draft. You can attach an image before downloading it.
+6. Open **Reports** and download an Excel workbook.
+7. In **Storage**, review and remove the disposable sample diagnostic file.
 
 The demo follows the private app's layout and workflows, using **fictional products and prices**. The sample history includes below-MAP prices recovering to MAP or above, alongside stable prices and unresolved issues, to illustrate what a follow-up workflow could look like. These are examples, not claims about actual retailer pricing or outcomes caused by Seedwatch. Each visitor gets a separate temporary workspace, so your edits do not affect anyone else's data. Company data is not included. Price checks and listing tests are simulated, and schedule controls do not run background jobs.
 
@@ -51,7 +57,7 @@ This project has also taught me to listen to the person using what I build. Feat
 
 ## What I'm working on next
 
-I'm exploring ways to make new retailer setup easier and improve reliable automated access, including supported integrations where available. Retailer access restrictions remain a limitation, so manual checks are still an important part of the workflow.
+I'm continuing to improve retailer compatibility and reliable automated access, including supported integrations where available. Retailer access restrictions remain a limitation, so manual checks are still an important part of the workflow.
 
 ## Run the demo locally
 

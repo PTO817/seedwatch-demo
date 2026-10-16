@@ -48,7 +48,7 @@ def render_schedule(config):
         if st.form_submit_button('Save schedule'):
             save_settings(config.RUNTIME,enabled,hour,zone);st.rerun()
     st.write('Next scheduled check: **'+(next_slot.strftime('%A, %B %d at %I:%M %p %Z') if current['enabled'] else 'Paused')+'**')
-    st.caption('Demo schedule only; no background jobs run. All supported retailers are included. Keep Seedwatch running and the computer awake. After a missed Sunday, it runs one catch-up check when reopened; it does not invent prices for missed dates. Failed scheduled runs remain visible and can be retried with Check prices.')
+    st.caption('Demo schedule only: settings are saved in this sample session, but no background jobs run. In the private app, Sunday checks run while Seedwatch is open and the host computer is awake; one catch-up check runs after a missed Sunday.')
     with open_sqlite(state_path(config.RUNTIME)) as c:
         row=c.execute('SELECT s.started,r.status FROM scheduled_runs s LEFT JOIN runs r ON r.id=s.run_id ORDER BY s.started DESC LIMIT 1').fetchone()
     if row:st.write(f'Last scheduled attempt: {row[0]} · {row[1] or "Starting"}')

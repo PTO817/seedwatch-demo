@@ -1,4 +1,5 @@
 """Catalog editing and manual observations; writes are locked and backed up."""
+import json
 from contextlib import contextmanager
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
@@ -23,13 +24,14 @@ def retailers(database):
             for name,domain,notes in c.execute('SELECT name,domain,notes FROM retailers'):
                 result[name]={'name':name,'domain':domain,'notes':notes}
     for row in result.values():
-        row['checks']='Automatic · listing test required' if row['name'] in COLLECTORS else 'Manual checks'
+        row['checks']='Automatic · listing test required' if row['name'] in COLLECTORS else 'Test compatibility in Retailer listings'
     return sorted(result.values(),key=lambda r:r['name'].casefold())
 
 
 def save_retailer(database, *, name, website, notes='', mode='demo'):
     name=str(name).strip();website=str(website).strip()
-    if not name:raise ValueError('Enter a retailer name.')
+    if not name or '/' in name or '\\' in name or name in ('.','..'):
+        raise ValueError('Enter a retailer name without path separators.')
     u=urlsplit(website if '://' in website else 'https://'+website)
     domain=(u.hostname or '').lower().removeprefix('www.')
     import ipaddress,re
@@ -51,7 +53,9 @@ def metadata(c, rows):
     tables={x[0] for x in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     brands=dict(c.execute('SELECT product_id,brand FROM product_brands')) if 'product_brands' in tables else {}
     modes=dict(c.execute('SELECT listing_id,mode FROM listing_settings')) if 'listing_settings' in tables else {}
+    rules=dict(c.execute('SELECT listing_id,config FROM listing_automation')) if 'listing_automation' in tables else {}
     for r in rows:
+        r['automation_rule']=json.loads(rules[r['listing_id']]) if r.get('listing_id') in rules else None
         r['brand']=brands.get(r['product_id'],'Amazing Herbs')
         r['collection_mode']=modes.get(r.get('listing_id'),'Automatic' if r.get('retailer_name') in COLLECTORS else 'Manual')
     return rows
@@ -64,7 +68,7 @@ def products(database):
 def listings(database):
     with connect(database) as c:
         c.row_factory=sqlite3.Row
-        return metadata(c,[dict(r) for r in c.execute('SELECT l.*,p.sku,p.product_name,p.size FROM retailer_listings l JOIN products p ON p.product_id=l.product_id ORDER BY p.sku,l.retailer_name')])
+        return metadata(c,[dict(r) for r in c.execute('SELECT l.*,p.sku,p.product_name,p.size,p.upc FROM retailer_listings l JOIN products p ON p.product_id=l.product_id ORDER BY p.sku,l.retailer_name')])
 
 def money(value):
     try: n=Decimal(str(value))
@@ -123,13 +127,18 @@ def save_listing(database, *, product_id, retailer, url, retailer_id='', collect
         registered=next((r for r in registry if r['name']==retailer),None)
         if registered and registered['domain'] and not (u.hostname==registered['domain'] or u.hostname.endswith('.'+registered['domain'])):
             raise ValueError('The product URL must belong to the selected retailer’s website.')
+        generic=retailer not in COLLECTORS
         if collection_mode=='Automatic':
-            brand=c.execute('SELECT brand FROM product_brands WHERE product_id=?',(product_id,)).fetchone()
-            if brand and brand[0].casefold()!='amazing herbs':raise ValueError('New brands start with manual checks; existing collectors are configured for Amazing Herbs.')
-            domain=HOSTS.get(retailer)
-            if not domain or not (u.hostname==domain or u.hostname.endswith('.'+domain)):
-                raise ValueError('Automatic collection requires a supported retailer and its matching website.')
-            if not retailer_id:raise ValueError('Automatic checks need the exact retailer product ID (for example, Amazon ASIN).')
+            if generic:
+                from automatic_setup import checked_url
+                checked_url(url,(registered or {}).get('domain',''))
+            else:
+                brand=c.execute('SELECT brand FROM product_brands WHERE product_id=?',(product_id,)).fetchone()
+                if brand and brand[0].casefold()!='amazing herbs':raise ValueError('This collector is configured for Amazing Herbs.')
+                domain=HOSTS.get(retailer)
+                if not domain or not (u.hostname==domain or u.hostname.endswith('.'+domain)):
+                    raise ValueError('Automatic collection requires the retailer’s matching website.')
+                if not retailer_id:raise ValueError('Automatic checks need the exact retailer product ID.')
         if c.execute('SELECT 1 FROM retailer_listings WHERE product_id=? AND lower(retailer_name)=lower(?) AND listing_id!=?',(product_id,retailer,listing_id or -1)).fetchone():
             raise ValueError('This product already has a listing at that retailer. Edit that listing instead.')
         if c.execute('SELECT 1 FROM retailer_listings WHERE product_url=? AND listing_id!=?',(url,listing_id or -1)).fetchone():
@@ -138,7 +147,7 @@ def save_listing(database, *, product_id, retailer, url, retailer_id='', collect
             old=c.execute('SELECT retailer_product_id,product_url,active_status FROM retailer_listings WHERE listing_id=?',(listing_id or -1,)).fetchone()
             old_mode=c.execute('SELECT mode FROM listing_settings WHERE listing_id=?',(listing_id or -1,)).fetchone()
             changed=not old or old[:2]!=(retailer_id,url) or old[2]!='Active' or (old_mode and old_mode[0]!='Automatic')
-            if changed and active:
+            if (changed or generic) and active:
                 import time
                 from listing_test import fingerprint
                 c.row_factory=sqlite3.Row
@@ -148,6 +157,13 @@ def save_listing(database, *, product_id, retailer, url, retailer_id='', collect
                 valid=test_result and test_result.get('passed') and 0<=time.time()-test_result.get('tested_at',0)<900 and test_result.get('fingerprint')==fingerprint(product,retailer,url,retailer_id)
                 if not valid or not identity_confirmed:
                     raise ValueError('Test this listing successfully and confirm its product and size before enabling automatic checks. Tests expire after 15 minutes.')
+                if generic:
+                    selected=test_result.get('selected_offer')
+                    if not selected or selected not in test_result.get('offers',[]):
+                        raise ValueError('Choose one of the offers returned by the compatibility test.')
+                    if selected['rule']['domain']!=registered['domain']:
+                        raise ValueError('Retest this retailer’s product page.')
+
         args=(product_id,retailer,retailer_id,url,'Active' if active else 'Inactive')
         if listing_id is None:
             listing_id=c.execute('INSERT INTO retailer_listings(product_id,retailer_name,retailer_product_id,product_url,active_status) VALUES(?,?,?,?,?)',args).lastrowid
@@ -156,6 +172,14 @@ def save_listing(database, *, product_id, retailer, url, retailer_id='', collect
             if not old or old!=(product_id,retailer):raise ValueError('Existing listings must stay attached to the same product and retailer.')
             c.execute('UPDATE retailer_listings SET product_id=?,retailer_name=?,retailer_product_id=?,product_url=?,active_status=? WHERE listing_id=?',args+(listing_id,))
         c.execute('INSERT OR REPLACE INTO listing_settings VALUES(?,?)',(listing_id,collection_mode))
+        c.execute('CREATE TABLE IF NOT EXISTS listing_automation(listing_id INTEGER PRIMARY KEY,config TEXT NOT NULL)')
+        if generic and collection_mode=='Automatic' and active:
+            from automatic_setup import catalog_binding
+            config={'rule':selected['rule'],'catalog':catalog_binding(product)}
+            c.execute('INSERT OR REPLACE INTO listing_automation VALUES(?,?)',(listing_id,json.dumps(config)))
+        elif collection_mode=='Manual':
+            c.execute('DELETE FROM listing_automation WHERE listing_id=?',(listing_id,))
+
     return listing_id
 
 def record_price(database, *, listing_id, price, checked_on, context, mode='demo'):

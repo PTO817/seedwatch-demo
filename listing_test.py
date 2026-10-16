@@ -20,11 +20,18 @@ def fingerprint(product,retailer,url,retailer_id):
 
 
 def preview(database,product_id,retailer,url,retailer_id,listing_id=None,mode='demo',**kwargs):
+    from catalog_tools import retailers
+    from automatic_setup import checked_url
     product=next(p for p in products(database) if p['product_id']==product_id)
-    host=urlsplit(url).hostname
-    domain=HOSTS.get(retailer)
-    if not domain or host not in (domain,'www.'+domain) or not retailer_id:
-        raise ValueError('Enter the matching retailer URL and product ID.')
-    return {'passed':True,'fingerprint':fingerprint(product,retailer,url,retailer_id),'tested_at':time.time(),
-            'price':product['map_price'],'detail':'Simulated listing test passed. No website was contacted. Confirm the product details.',
-            'output':'Synthetic test result; not a live validation.'}
+    domain=next((r['domain'] for r in retailers(database) if r['name']==retailer),'')
+    checked_url(url,domain)
+    result={'passed':True,'fingerprint':fingerprint(product,retailer,url,retailer_id),'tested_at':time.time(),
+            'price':round(product['map_price']*1.05,2),'detail':'Simulated listing test passed. No website was contacted. Confirm the sample offer details.',
+            'output':'Synthetic compatibility result; not a live validation of this retailer.'}
+    if retailer not in COLLECTORS:
+        rule={'version':1,'domain':domain,'identity':{'sku':product['sku']},'seller':'Sample marketplace seller','currency':'USD','name':product['product_name']}
+        offer={'key':hashlib.sha256(json.dumps(rule,sort_keys=True).encode()).hexdigest(),'price':result['price'],'product':product['product_name'],'seller':rule['seller'],'size':product['size'],'rule':rule}
+        result['offers']=[offer]
+    elif not retailer_id:
+        raise ValueError('Enter the retailer product ID before testing.')
+    return result

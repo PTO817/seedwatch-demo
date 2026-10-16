@@ -81,6 +81,10 @@ def observation(runtime, check_id):
 
 def manual_reason(row):
     if row.get('collection_mode')=='Manual':return 'Manual price checks selected for this listing.'
+    if row.get('automation_rule') and row['retailer_name'] not in COLLECTORS:
+        from automatic_setup import catalog_binding
+        if row['automation_rule'].get('catalog')!=catalog_binding(row):return 'Product details changed; retest automatic setup.'
+        return ''
     if row['retailer_name'] not in COLLECTORS and row['retailer_name'] not in MANUAL:return 'No automatic collector configured; record a manual price.'
     if row.get('brand','Amazing Herbs').casefold()!='amazing herbs':return 'This brand requires manual checks until a compatible collector is configured.'
     if row['retailer_name'] in MANUAL:return MANUAL[row['retailer_name']]
@@ -137,3 +141,12 @@ def latest_attempts(runtime):
 
         item_rows=[dict(r) for r in c.execute("SELECT a.* FROM listing_attempts a WHERE attempted=(SELECT MAX(b.attempted) FROM listing_attempts b WHERE b.listing_id=a.listing_id)")]
         return retailer_rows+item_rows
+
+
+def automatic_retailers(database):
+    """Built-ins plus explicitly tested, enabled custom listings."""
+    names=list(COLLECTORS)
+    for row in snapshot(database):
+        if row.get('automation_rule') and not manual_reason(row) and row['retailer_name'] not in names:
+            names.append(row['retailer_name'])
+    return names

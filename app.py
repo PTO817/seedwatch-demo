@@ -1,8 +1,8 @@
-# Verify the deployment is a complete, matching release before importing app modules.
+# Verify all public release modules were deployed together.
 from pathlib import Path as _Path
 import hashlib as _hashlib
 import streamlit as _st
-_EXPECTED = {'config.py': 'e30d58d6b373070827f36e4801fbfb30c2f643ebac6525941d2233c58334270d', 'catalog_tools.py': '64c6d70ce493ff434eeaec58c9b74a958245401c565475499ecf27ed27afb4a9', 'catalog_ui.py': '960741f7fe7feed32a1b947ae7a336fa25b1d900be2202c84801c72565ea2cc7', 'comparison_ui.py': 'c7609dc6fe261e75bf1750c246ecd9675aebc4a50871b614763981d64272d1ab', 'demo_workspace.py': '8de4566b3bc64b1a35acf4ba8153d8193f859f2d29e90b6078290d7edb862d19', 'demo_data.py': '0f791fcba971a87ab65a08703b0e4bf6cefe7e68378259269d800d0025f2bdf3', 'model.py': '0afbce23b48639041e1f824b2dbfd1d21208387b60db18756179e9746a318fdf', 'reports.py': '1949ba60de8085b05c3e182190ca54de1450adc8d79cd3c0f6f58a568ef68dec', 'scheduling.py': 'bdadcc385ba18a4e85eae2fa1b246284115dca5a11bed19fbd5571ab7a865001', 'storage.py': '5b42ce2afbc23719fc436d858224c7613844757cd2da08d4bbf3edd6f2f159e1', 'listing_test.py': '6cd18eee6c4406d18abf975e9c9d3485aa0ad2c1b9bbb242b2e162a7dd68344f'}
+_EXPECTED = {'automatic_setup.py': '32e35d982fd1398fad8862721b19ee852119e43ce3e47dd49e03f8193ebed3a2', 'catalog_tools.py': 'fb76dcb91c0114bb593700df98cbc0effe03c0f389819d8a698560c263ecc1ef', 'catalog_ui.py': '0a01e573694ac428d3f8a3a04c6a5eab84b4c47ac62f41e21fe1848ed1669042', 'comparison_ui.py': 'c7609dc6fe261e75bf1750c246ecd9675aebc4a50871b614763981d64272d1ab', 'config.py': 'e30d58d6b373070827f36e4801fbfb30c2f643ebac6525941d2233c58334270d', 'demo_data.py': '0f791fcba971a87ab65a08703b0e4bf6cefe7e68378259269d800d0025f2bdf3', 'demo_workspace.py': '6847d313d09529baca9b91d01c53157cc8f1db14862c8d10b1b12312c93bd78a', 'errors.py': 'e92de4d7e9e361ce508826cac2dccaa9f4695bc3c298d1d604bd12ea2263e61d', 'followups.py': '9a0bb45c2437d26429cfdeb2888a0a9b4ba8bc1483bf2e38ef2f9c4538a107d7', 'listing_test.py': '7d9a1dc8a59d07f6e3d8d8789cc1981c82318036e1ee126de8e4c99b189b7189', 'model.py': '25746a2faa83898351fbaa48f606f12353d7a88632567e0250243c8e4707007b', 'reports.py': 'ee5a78511f06fc7fe8d1296c7f527cc6314db75331255e681ff1def57e9bcb94', 'retailer_email.py': '106ad8317553a830e37eea0bb71829be32a4d55455fe9eec533be9d852fcd38a', 'scheduling.py': '3e424c0264f5a33d8e7cb1400e4d6c150215a44fc189aed599012486d7d9ab82', 'storage.py': '7e14d52d5558941299ca4f62449f2aeaf3bd23b0d9d72803d9c66ac2d2a3195a'}
 _root = _Path(__file__).resolve().parent
 _bad = [name for name, digest in _EXPECTED.items() if not (_root/name).is_file() or _hashlib.sha256((_root/name).read_bytes()).hexdigest()!=digest]
 if _bad:
@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import config
+from errors import collector_problem
 from demo_workspace import workspace, simulate_run
 from demo_data import create_demo
 from model import snapshot,decorate,history,run_status,latest_attempts,observation,COLLECTORS,MANUAL,today
@@ -37,7 +38,7 @@ config=workspace()
 with st.sidebar:
     st.markdown('<div class="brand">Seedwatch<small>RETAIL PRICE MONITOR</small></div>',unsafe_allow_html=True)
     st.write('')
-    page=st.radio('Workspace',['Overview','Listings','Product history','Manage catalog','Collection activity','Reports','Storage'],label_visibility='collapsed')
+    page=st.radio('Workspace',['Overview','Listings','Product history','Manage catalog','Collection activity','Reports','Follow-ups','Retailer emails','Storage'],label_visibility='collapsed')
     st.divider()
     st.caption('PUBLIC PORTFOLIO DEMO' if config.DEMO else 'PRIVATE WORKSPACE')
     st.write('Synthetic data · no live checks' if config.DEMO else 'Amazing Herbs · retail monitoring')
@@ -45,8 +46,8 @@ with st.sidebar:
     if not config.DEMO and not config.LOCAL:st.button('Sign out',on_click=st.logout)
 
 st.markdown('<div class="eyebrow">PRICE INTELLIGENCE / WORKSPACE</div>',unsafe_allow_html=True)
-st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Keep your catalog growing.','Storage':'Keep your workspace tidy.','Reports':'Take your pricing data with you.'}[page])
-if config.DEMO:st.info('Portfolio demo — all products and prices below are synthetic. Retailer links open homepages. Live collection is disabled.')
+st.title({'Overview':'A clear view of your retailers.','Listings':'Every listing. One place.','Product history':'See how prices change.','Collection activity':'Know what was checked.','Manage catalog':'Keep your catalog growing.','Storage':'Keep your workspace tidy.','Reports':'Take your pricing data with you.','Follow-ups':'Turn findings into follow-ups.','Retailer emails':'Prepare your retailer outreach.'}[page])
+if config.DEMO:st.info('Portfolio demo — all products and prices below are synthetic. Initial retailer links open homepages. Edits stay in your temporary sample workspace. Listing tests and collection are simulated; no websites are contacted.')
 else:st.caption('Private development preview' if config.LOCAL else 'Private company workspace')
 
 if config.TEST_WORKSPACE:
@@ -65,6 +66,14 @@ df=pd.DataFrame(rows)
 if page=='Manage catalog':
     from catalog_ui import render_catalog
     render_catalog(config.EDIT)
+    st.stop()
+if page=='Retailer emails':
+    from retailer_email import render
+    render(config.EDIT,rows)
+    st.stop()
+if page=='Follow-ups':
+    from followups import render
+    render(config.EDIT,rows)
     st.stop()
 if page=='Reports':
     from reports import render_reports
@@ -131,6 +140,9 @@ if page=='Overview':
     if below.empty:st.success('No below-MAP observations in this view.')
     else:table(below.head(12))
 
+    from reports import render_changes
+    render_changes(config,rows)
+
 elif page=='Listings':
     a,b,c=st.columns([2,1,1])
     query=a.text_input('Search products or SKU',placeholder='Try a product name or SKU')
@@ -156,8 +168,11 @@ elif page=='Product history':
 else:
     st.write('Run supported retailers in sequence. Failures stay visible and do not stop the remaining retailers.')
     st.warning('H-E-B and Vitamin Shoppe require manual checks. Amazon’s checkout-only listing remains unresolved.')
-    chosen=st.multiselect('Retailers to check',list(COLLECTORS),default=['Amazon','Whole Foods'] if config.TEST_WORKSPACE else list(COLLECTORS))
-    st.caption('Demo: price checks are simulated using sample data; no retailer websites are contacted.')
+    from model import automatic_retailers
+    available=automatic_retailers(config.DATABASE)
+    chosen=st.multiselect('Retailers to check',available,default=['Amazon','Whole Foods'] if config.TEST_WORKSPACE else available)
+    show_browser=st.checkbox('Show browser windows for troubleshooting',value=False)
+    st.caption('Demo: checks and browser activity are simulated. No retailer websites are contacted.')
     if st.button('Check prices',type='primary',disabled=not chosen):
         simulate_run(config,chosen)
         st.rerun()

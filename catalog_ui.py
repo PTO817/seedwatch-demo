@@ -38,7 +38,7 @@ def render_catalog(config):
             website=st.text_input('Retailer website',placeholder='https://www.walmart.com')
             notes=st.text_area('Notes (optional)',help='For example, the seller or store location you want to monitor.')
             submitted=st.form_submit_button('Save retailer',type='primary')
-        st.caption('New retailers start with manual checks unless Seedwatch has a compatible automatic collector. Saving a website does not enable automatic collection.')
+        st.caption('After saving, open Retailer listings and choose Test automatic checks. Compatible pages can be monitored without adding code. Blocked or unsupported pages remain manual.')
         if submitted:
             try:
                 saved=save_retailer(config.DATABASE,name=name,website=website,notes=notes,mode=config.MODE)
@@ -58,20 +58,21 @@ def render_catalog(config):
         if retailer=='Add a new retailer…':
             st.info('Select Retailers above to save the retailer first, then return here.');return
         p=next(p for p in ps if p['product_id']==pid)
-        auto=retailer in COLLECTORS and p['brand'].casefold()=='amazing herbs'
-        st.info('New retailers and brands can be tracked here with manual prices. Automatic collection requires a compatible retailer collector.')
+        generic=retailer not in COLLECTORS
+        auto=generic or p['brand'].casefold()=='amazing herbs'
+        st.info('Test the product link, review the detected offer, then confirm its product and size. Only a successful test can enable new automatic checks.')
         from listing_test import preview,suggest_id,fingerprint
         prefix=f'listing_{pid}_{lid}_{retailer}'
         url=st.text_input('Product page URL',value=l.get('product_url',''),key=prefix+'_url').strip()
         guessed=suggest_id(retailer,url)
-        rid=st.text_input('Retailer product ID / ASIN',value=l.get('retailer_product_id') or guessed,key=prefix+'_id_'+guessed).strip()
+        rid=st.text_input('Retailer product ID (optional for new retailers)' if generic else 'Retailer product ID / ASIN',value=l.get('retailer_product_id') or guessed,key=prefix+'_id_'+guessed).strip()
         if guessed:st.caption('Product ID found in the URL: '+guessed)
         elif retailer=='Amazing Herbs':st.caption('Use the SKU shown on the Amazing Herbs product page. It is not an Amazon ASIN.')
         modes=['Manual','Automatic'] if auto else ['Manual']
         cm=st.selectbox('How to check prices',modes,index=modes.index(l.get('collection_mode')) if l.get('collection_mode') in modes else 0,key=prefix+'_mode')
         active=st.checkbox('Active listing',value=l.get('active_status','Active')=='Active',key=prefix+'_active')
         fp=fingerprint(p,retailer,url,rid)
-        if st.button('Test listing',disabled=not auto or not url or not rid,key=prefix+'_test'):
+        if st.button('Test automatic checks',disabled=not auto or not url or (not generic and not rid),key=prefix+'_test'):
             try:
                 with st.spinner('Testing only this listing. Your catalog and price history are unchanged…'):
                     st.session_state[prefix+'_result']=preview(config.DATABASE,pid,retailer,url,rid,lid,mode=config.MODE)
@@ -79,18 +80,31 @@ def render_catalog(config):
                 st.session_state.pop(prefix+'_result',None);st.error(str(e))
         result=st.session_state.get(prefix+'_result')
         if result and result.get('fingerprint')!=fp:result=None
+        if result and generic and result.get('passed'):
+            offers=result['offers']
+            selected=st.selectbox('Offer to monitor',range(len(offers)),format_func=lambda i:f"{offers[i]['seller']} · ${offers[i]['price']:.2f} USD · {offers[i]['product']}",key=prefix+'_offer_'+str(result['tested_at']))
+            result=dict(result,selected_offer=offers[selected],price=offers[selected]['price'],offer=offers[selected])
         if result:
             (st.success if result['passed'] else st.warning)(result['detail'])
             if result['passed']:
                 st.write(f"Test price: **${result['price']:.2f} USD** · Catalog size: **{p['size']}**")
-                if result.get('offer'):st.json(result['offer'])
+                if generic:
+                    found=result['selected_offer']
+                    st.write('Detected product: **'+found['product']+'**')
+                    st.write('Seller: **'+found['seller']+'** · Size: '+found['size'])
+                    if found.get('delivery_location'):st.write('Shipping location: **'+found['delivery_location']+'**')
+                    st.caption('Product identifiers: '+', '.join(f'{k}: {v}' for k,v in found['rule']['identity'].items()))
+                    st.caption('Later checks must match this exact product and seller. Availability and prices may depend on the retailer’s default location. Confirm the offer is a one-time purchase, not a subscription.')
+                elif result.get('offer'):st.json(result['offer'])
             with st.expander('Test details'):st.code(result.get('output',''),language='text')
+        if generic:
+            st.caption('Compatibility depends on the site publishing a clear product offer and allowing background access. A successful test does not guarantee every future check will succeed. Saved automatic listings are included in Sunday checks while Seedwatch is running.')
         if not auto:st.caption('This retailer or brand requires a manual review; automatic testing is unavailable.')
         if url.startswith(('https://','http://')):st.link_button('Review product page ↗',url)
-        confirmed=st.checkbox('I confirmed the product, size/count, and retailer ID match this catalog product.',key=prefix+'_confirmed_'+fp)
+        confirmed=st.checkbox('I confirmed the product, size/count, seller, and one-time offer match what I want to monitor.',key=prefix+'_confirmed_'+fp)
         st.caption('Testing cannot guarantee a perfect match. Review the page and test details. Saving adds the listing only; test prices are not added to history.')
         unchanged=bool(l and url==l.get('product_url') and rid==(l.get('retailer_product_id') or '') and cm==l.get('collection_mode') and l.get('active_status')=='Active')
-        can_save=confirmed and (cm=='Manual' or not active or unchanged or bool(result and result.get('passed')))
+        can_save=confirmed and (cm=='Manual' or not active or (unchanged and not generic) or bool(result and result.get('passed')))
         if st.button('Save listing',type='primary',disabled=not can_save,key=prefix+'_save'):
             try:
                 save_listing(config.DATABASE,product_id=pid,retailer=retailer,url=url,retailer_id=rid,collection_mode=cm,active=active,listing_id=lid,mode=config.MODE,test_result=result,identity_confirmed=confirmed)
