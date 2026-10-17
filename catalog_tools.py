@@ -23,6 +23,9 @@ def retailers(database):
         if c.execute("SELECT 1 FROM sqlite_master WHERE name='retailers'").fetchone():
             for name,domain,notes in c.execute('SELECT name,domain,notes FROM retailers'):
                 result[name]={'name':name,'domain':domain,'notes':notes}
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='removed_retailers'").fetchone():
+            removed={r[0].casefold() for r in c.execute('SELECT name FROM removed_retailers')}
+            result={k:v for k,v in result.items() if k.casefold() not in removed}
     for row in result.values():
         row['checks']='Automatic · listing test required' if row['name'] in COLLECTORS else 'Test compatibility in Retailer listings'
     return sorted(result.values(),key=lambda r:r['name'].casefold())
@@ -47,6 +50,8 @@ def save_retailer(database, *, name, website, notes='', mode='demo'):
             raise ValueError('That website already belongs to a saved retailer.')
         c.execute('CREATE TABLE IF NOT EXISTS retailers(name TEXT PRIMARY KEY COLLATE NOCASE,domain TEXT NOT NULL UNIQUE,notes TEXT NOT NULL)')
         c.execute('INSERT INTO retailers VALUES(?,?,?)',(name,domain,str(notes).strip()))
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='removed_retailers'").fetchone():
+            c.execute('DELETE FROM removed_retailers WHERE name=? COLLATE NOCASE',(name,))
     return name
 
 def metadata(c, rows):
@@ -125,6 +130,7 @@ def save_listing(database, *, product_id, retailer, url, retailer_id='', collect
         names=[r['name'] for r in registry]
         retailer=next((n for n in names if n.casefold()==retailer.casefold()),retailer)
         registered=next((r for r in registry if r['name']==retailer),None)
+        if not registered:raise ValueError('Save this retailer first before adding a listing.')
         if registered and registered['domain'] and not (u.hostname==registered['domain'] or u.hostname.endswith('.'+registered['domain'])):
             raise ValueError('The product URL must belong to the selected retailer’s website.')
         generic=retailer not in COLLECTORS

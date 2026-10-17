@@ -22,7 +22,7 @@ With the app, a user can:
 
 - **Find listings that need attention:** see below-MAP prices, outdated observations, and listings requiring manual checks.
 - **Compare the same product across retailers:** view color-coded price history alongside MAP.
-- **Manage the catalog:** add or edit products, register retailers, and attach product pages.
+- **Manage the catalog:** add or edit products, register retailers, and attach product pages. Delete a saved listing or an entire retailer after reviewing the affected records and confirming. Deletions create recovery backups and affect only your temporary sample workspace in this demo.
 - **Set up a new automatic source:** test a product page, review the detected product and seller, confirm the offer, and save a compatible listing for future checks. In this demo the test is simulated; it does not establish that a real site supports automation.
 - **Record a manual check:** save a price and notes about the seller or offer when automation is unavailable.
 - **Download Excel reports:** take pricing results and history into a spreadsheet.

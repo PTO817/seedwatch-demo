@@ -34,4 +34,9 @@ def preview(database,product_id,retailer,url,retailer_id,listing_id=None,mode='d
         result['offers']=[offer]
     elif not retailer_id:
         raise ValueError('Enter the retailer product ID before testing.')
+    details=[result['output'],f'Retailer: {retailer}',f'Product: {product["product_name"]}',f'Size: {product["size"]}',f'Price: ${result["price"]:.2f} USD']
+    if result.get('offers'):
+        offer=result['offers'][0]
+        details.extend(['Seller: '+offer['seller'],'Identifiers: '+', '.join(f'{k}: {v}' for k,v in offer['rule']['identity'].items())])
+    result['output']='\n'.join(details)
     return result

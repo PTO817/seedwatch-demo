@@ -46,6 +46,11 @@ def render_catalog(config):
             except ValueError as e:st.error(str(e))
         st.subheader('Your retailers')
         st.dataframe(retailers(config.DATABASE),hide_index=True,use_container_width=True,column_config={'name':'Retailer','domain':'Website','checks':'Price checks','notes':'Notes'})
+        choices=[r['name'] for r in retailers(config.DATABASE)]
+        if choices:
+            target=st.selectbox('Retailer to delete',choices)
+            from catalog_delete import render_delete
+            render_delete(config,retailer=target)
     elif action=='Retailer listings':
         if not ps:st.info('Add a product first.');return
         pid=st.selectbox('Product',list(labels),format_func=labels.get)
@@ -96,7 +101,7 @@ def render_catalog(config):
                     st.caption('Product identifiers: '+', '.join(f'{k}: {v}' for k,v in found['rule']['identity'].items()))
                     st.caption('Later checks must match this exact product and seller. Availability and prices may depend on the retailer’s default location. Confirm the offer is a one-time purchase, not a subscription.')
                 elif result.get('offer'):st.json(result['offer'])
-            with st.expander('Test details'):st.code(result.get('output',''),language='text')
+            with st.expander('Test details'):st.code(result.get('output') or result['detail'],language='text')
         if generic:
             st.caption('Compatibility depends on the site publishing a clear product offer and allowing background access. A successful test does not guarantee every future check will succeed. Saved automatic listings are included in Sunday checks while Seedwatch is running.')
         if not auto:st.caption('This retailer or brand requires a manual review; automatic testing is unavailable.')
@@ -110,6 +115,9 @@ def render_catalog(config):
                 save_listing(config.DATABASE,product_id=pid,retailer=retailer,url=url,retailer_id=rid,collection_mode=cm,active=active,listing_id=lid,mode=config.MODE,test_result=result,identity_confirmed=confirmed)
                 st.session_state.catalog_saved='Retailer listing saved. Run a price check to add its first observation.';st.rerun()
             except ValueError as e:st.error(str(e))
+        if lid is not None:
+            from catalog_delete import render_delete
+            render_delete(config,listing_id=lid)
     else:
         active=[l for l in ls if l['active_status']=='Active']
         if not active:st.info('Add an active retailer listing first.');return

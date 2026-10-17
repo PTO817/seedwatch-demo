@@ -145,7 +145,9 @@ def latest_attempts(runtime):
 
 def automatic_retailers(database):
     """Built-ins plus explicitly tested, enabled custom listings."""
-    names=list(COLLECTORS)
+    from catalog_tools import retailers
+    registered={r['name'] for r in retailers(database)}
+    names=[r for r in COLLECTORS if r in registered]
     for row in snapshot(database):
         if row.get('automation_rule') and not manual_reason(row) and row['retailer_name'] not in names:
             names.append(row['retailer_name'])
